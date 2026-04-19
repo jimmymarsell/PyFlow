@@ -1,0 +1,27 @@
+{
+  "screens": [
+    {
+      "screen_id": "local",
+      "host": null,
+      "port": 0,
+      "width": 2560,
+      "height": 1600,
+      "is_local": true,
+      "name": "主控电脑屏幕"
+    },
+    {
+      "screen_id": "remote_left",
+      "host": "192.168.1.10",
+      "port": 12345,
+      "width": 1920,
+      "height": 1080,
+      "direction": "left",
+      "alignment": "top",
+      "offset_x": 0,
+      "offset_y": 0,
+      "edge_margin": 10,
+      "is_local": false,
+      "name": "被控电脑屏幕-左侧"
+    }
+  ]
+}

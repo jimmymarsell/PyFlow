@@ -1,63 +1,35 @@
-# 编译生成的可执行文件
-*.exe
-*.out
-*.app
-
-# 编译生成的目标文件
-*.o
-*.obj
-*.elf
-
-# 临时文件
-*.tmp
-*.temp
-*.swp
-*~
-
-# IDE 配置文件
-.vscode/
-.idea/
-*.suo
-*.user
-
-# 项目特定目录
-reference/
-
+# ========================
 # Python
+# ========================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
 # Virtual environments
 venv/
 venv_build/
 env/
-.venv
+.venv/
+.env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+.installed.cfg
+MANIFEST
 
 # PyInstaller
-*.spec
+*.manifest
+# Note: build.spec is intentionally NOT ignored (it's part of the project)
 
 # Unit test / coverage
 htmlcov/
 .tox/
+.nox/
 .coverage
 .coverage.*
 .cache
@@ -67,14 +39,50 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Config
-config.ini
+# ========================
+# IDE
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.suo
+*.user
+.project
+.classpath
+.settings/
+
+# ========================
+# OS
+# ========================
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ========================
+# Project specific
+# ========================
+
+# Logs
+logs/
 *.log
 
-# Environment
-.env
-.venv
+# Config with personal settings (use config.ini.example as template)
+config.ini
 
-# OS
-.DS_Store
-Thumbs.db
+# Reference codebase (too large for git)
+reference/
+
+# PyInstaller output
+dist/
+
+# Build artifacts (keep build.spec, ignore build output)
+build/
+
+# Compiled exe files
+*.exe
+*.out
+*.app

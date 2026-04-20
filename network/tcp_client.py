@@ -25,6 +25,7 @@ class TCPClient:
         try:
             # 1. 创建 socket：IPv4 + TCP
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             
             # 2. 连接到服务端（阻塞操作）
             # connect() 会尝试与服务端建立 TCP 连接
@@ -58,7 +59,7 @@ class TCPClient:
                 
                 # recv() 接收数据，返回 bytes 对象
                 # 空数据表示服务端断开连接
-                data = self.socket.recv(1024)
+                data = self.socket.recv(8192)
                 if not data:
                     print("服务端已断开连接")
                     break

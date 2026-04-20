@@ -49,6 +49,7 @@ class TCPServer:
                     # accept() 阻塞等待客户端连接
                     # 返回值：(client_socket, client_addr)
                     self.client_socket, client_addr = self.server_socket.accept()
+                    self.client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     print(f"TCP 客户端连接成功，地址：{client_addr}")
                     # 启动新线程处理该客户端，实现同时处理多个客户端
                     self.client_thread = threading.Thread(
@@ -81,7 +82,7 @@ class TCPServer:
                 client_socket.settimeout(0.5)
                 # recv(1024) 接收最多 1024 字节数据
                 # 返回 bytes 对象，空数据表示客户端断开
-                data = client_socket.recv(1024)
+                data = client_socket.recv(8192)
                 if not data:
                     break
                 # 调用回调函数处理接收到的数据

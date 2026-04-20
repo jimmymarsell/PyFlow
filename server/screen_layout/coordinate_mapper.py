@@ -2,10 +2,25 @@
 坐标映射器
 
 实现不同分辨率屏幕间的坐标映射计算
+
+核心原则：
+- 鼠标穿过屏幕边界时，进入方向的坐标往内偏移（避免立刻触发返回边缘检测）
+- 垂直于进入方向的坐标按比例映射
+- 模拟物理多屏拼接效果：光标从一边消失、从另一边同样高度位置出现
+
+边缘偏移量 EDGE_OFFSET：切换时光标不放在像素 0 或 width-1，
+而是往内偏移 EDGE_OFFSET 像素（默认 15），避免立刻触发对向边缘检测。
 """
 
 from typing import Tuple
 from .screen_layout import ScreenLayout
+
+
+def _clamp(value: int, min_val: int, max_val: int) -> int:
+    return max(min_val, min(value, max_val))
+
+
+EDGE_OFFSET = 15
 
 
 class CoordinateMapper:
@@ -13,7 +28,7 @@ class CoordinateMapper:
     坐标映射器
 
     负责在不同屏幕之间进行坐标映射，考虑：
-    - 屏幕对齐方式（左对齐、右对齐、上对齐、下对齐）
+    - 屏幕对齐方式（左对齐、右对齐、上对齐、下对齐、居中对齐）
     - 分辨率比例
     - 偏移量微调
     """
@@ -26,6 +41,10 @@ class CoordinateMapper:
     ) -> Tuple[int, int]:
         """
         将坐标从源屏幕映射到目标（远程）屏幕
+
+        仅在屏幕边界处触发映射，因此：
+        - 进入坐标固定为边缘值
+        - 垂直坐标按比例映射
 
         Args:
             from_screen: 源屏幕配置
@@ -48,68 +67,37 @@ class CoordinateMapper:
         return (0, 0)
 
     @staticmethod
-    def _map_from_right(
-        from_screen: ScreenLayout,
-        to_screen: ScreenLayout,
-        x: int, y: int
-    ) -> Tuple[int, int]:
-        """
-        从源屏幕右边界映射到目标屏幕左边界
-
-        左对齐：
-        源屏幕右边界 → 目标屏幕左边界
-
-        映射逻辑：
-        - x: 从源屏幕右边界（比例映射）→ 目标屏幕左边界
-        - y: 按高度比例映射
-        """
-        ratio_x = x / from_screen.width
-        ratio_y = y / from_screen.height
-
-        if to_screen.alignment == 'left':
-            new_x = 0
-        elif to_screen.alignment == 'right':
-            new_x = to_screen.width - int(ratio_x * to_screen.width)
-        elif to_screen.alignment == 'center':
-            new_x = int((to_screen.width - ratio_x * to_screen.width) / 2)
-        else:
-            new_x = 0
-
-        new_y = int(ratio_y * to_screen.height)
-
-        return (new_x + to_screen.offset_x, new_y + to_screen.offset_y)
-
-    @staticmethod
     def _map_from_left(
         from_screen: ScreenLayout,
         to_screen: ScreenLayout,
         x: int, y: int
     ) -> Tuple[int, int]:
         """
-        从源屏幕左边界映射到目标屏幕右边界
+        鼠标从本地屏幕向右移动，穿过右边缘，出现在远程屏幕的左边缘。
 
-        右对齐：
-        源屏幕左边界 → 目标屏幕右边界
-
-        映射逻辑：
-        - x: 从源屏幕左边界（比例映射）→ 目标屏幕右边界
-        - y: 按高度比例映射
+        物理效果：光标从本地右边缘消失，在远程屏幕左边缘同样高度位置出现。
+        X 往内偏移 EDGE_OFFSET（避免立刻触发返回边缘检测），Y 按比例映射。
         """
-        ratio_x = x / from_screen.width
-        ratio_y = y / from_screen.height
+        new_x = EDGE_OFFSET
+        new_y = CoordinateMapper._map_vertical(y, from_screen.height, to_screen, 'horizontal')
+        return (_clamp(new_x + to_screen.offset_x, 0, to_screen.width - 1),
+                _clamp(new_y + to_screen.offset_y, 0, to_screen.height - 1))
 
-        if to_screen.alignment == 'right':
-            new_x = to_screen.width - 1
-        elif to_screen.alignment == 'left':
-            new_x = to_screen.width - int((1 - ratio_x) * to_screen.width)
-        elif to_screen.alignment == 'center':
-            new_x = int((to_screen.width + ratio_x * to_screen.width) / 2)
-        else:
-            new_x = to_screen.width - 1
+    @staticmethod
+    def _map_from_right(
+        from_screen: ScreenLayout,
+        to_screen: ScreenLayout,
+        x: int, y: int
+    ) -> Tuple[int, int]:
+        """
+        鼠标从本地屏幕向左移动，穿过左边缘，出现在远程屏幕的右边缘。
 
-        new_y = int(ratio_y * to_screen.height)
-
-        return (new_x + to_screen.offset_x, new_y + to_screen.offset_y)
+        X 往内偏移 EDGE_OFFSET（右边缘往左偏移），Y 按比例映射。
+        """
+        new_x = to_screen.width - 1 - EDGE_OFFSET
+        new_y = CoordinateMapper._map_vertical(y, from_screen.height, to_screen, 'horizontal')
+        return (_clamp(new_x + to_screen.offset_x, 0, to_screen.width - 1),
+                _clamp(new_y + to_screen.offset_y, 0, to_screen.height - 1))
 
     @staticmethod
     def _map_from_bottom(
@@ -118,29 +106,14 @@ class CoordinateMapper:
         x: int, y: int
     ) -> Tuple[int, int]:
         """
-        从源屏幕下边界映射到目标屏幕上边界
+        鼠标从本地屏幕向上移动，穿过上边缘，出现在远程屏幕的下边缘。
 
-        上对齐：
-        源屏幕下边界 → 目标屏幕上边界
-
-        映射逻辑：
-        - x: 按宽度比例映射
-        - y: 从源屏幕下边界（比例映射）→ 目标屏幕上边界
+        Y 往内偏移 EDGE_OFFSET（下边缘往上偏移），X 按比例映射。
         """
-        ratio_x = x / from_screen.width
-        ratio_y = y / from_screen.height
-
-        new_x = int(ratio_x * to_screen.width)
-        new_y = 0
-
-        if to_screen.alignment == 'top':
-            new_y = 0
-        elif to_screen.alignment == 'bottom':
-            new_y = to_screen.height - int((1 - ratio_y) * to_screen.height)
-        elif to_screen.alignment == 'center':
-            new_y = int((to_screen.height - ratio_y * to_screen.height) / 2)
-
-        return (new_x + to_screen.offset_x, new_y + to_screen.offset_y)
+        new_y = to_screen.height - 1 - EDGE_OFFSET
+        new_x = CoordinateMapper._map_horizontal(x, from_screen.width, to_screen, 'vertical')
+        return (_clamp(new_x + to_screen.offset_x, 0, to_screen.width - 1),
+                _clamp(new_y + to_screen.offset_y, 0, to_screen.height - 1))
 
     @staticmethod
     def _map_from_top(
@@ -149,30 +122,90 @@ class CoordinateMapper:
         x: int, y: int
     ) -> Tuple[int, int]:
         """
-        从源屏幕上边界映射到目标屏幕下边界
+        鼠标从本地屏幕向下移动，穿过下边缘，出现在远程屏幕的上边缘。
 
-        下对齐：
-        源屏幕上边界 → 目标屏幕下边界
-
-        映射逻辑：
-        - x: 按宽度比例映射
-        - y: 从源屏幕上边界（比例映射）→ 目标屏幕下边界
+        Y 往内偏移 EDGE_OFFSET（避免立刻触发返回边缘检测），X 按比例映射。
         """
-        ratio_x = x / from_screen.width
-        ratio_y = y / from_screen.height
+        new_y = EDGE_OFFSET
+        new_x = CoordinateMapper._map_horizontal(x, from_screen.width, to_screen, 'vertical')
+        return (_clamp(new_x + to_screen.offset_x, 0, to_screen.width - 1),
+                _clamp(new_y + to_screen.offset_y, 0, to_screen.height - 1))
 
-        new_x = int(ratio_x * to_screen.width)
+    @staticmethod
+    def _map_vertical(
+        y: int,
+        from_height: int,
+        to_screen: ScreenLayout,
+        direction: str
+    ) -> int:
+        """
+        垂直坐标映射（水平拼接时使用）
 
-        if to_screen.alignment == 'bottom':
-            new_y = to_screen.height - 1
-        elif to_screen.alignment == 'top':
-            new_y = to_screen.height - int((1 - ratio_y) * to_screen.height)
+        根据对齐方式，计算目标屏幕上的 Y 坐标。
+
+        Args:
+            y: 源屏幕 Y 坐标
+            from_height: 源屏幕高度
+            to_screen: 目标屏幕
+            direction: 'horizontal' 或 'vertical'
+        """
+        ratio_y = y / from_height if from_height > 0 else 0
+
+        if to_screen.alignment in ('left', 'top'):
+            new_y = int(ratio_y * to_screen.height)
+        elif to_screen.alignment in ('right', 'bottom'):
+            new_y = int(ratio_y * to_screen.height) + (to_screen.height - int(from_height * to_screen.height / from_height)) if from_height < to_screen.height else int(ratio_y * to_screen.height)
+            height_on_to = int(from_height * to_screen.height / from_height) if from_height <= to_screen.height else to_screen.height
+            offset_y = (to_screen.height - height_on_to) // 2
+            if to_screen.alignment == 'right':
+                offset_y = to_screen.height - height_on_to
+            new_y = offset_y + int(ratio_y * height_on_to)
         elif to_screen.alignment == 'center':
-            new_y = int((to_screen.height + ratio_y * to_screen.height) / 2)
+            height_on_to = int(from_height * to_screen.height / from_height) if from_height > 0 else to_screen.height
+            height_on_to = min(height_on_to, to_screen.height)
+            offset_y = (to_screen.height - height_on_to) // 2
+            new_y = offset_y + int(ratio_y * height_on_to)
         else:
-            new_y = to_screen.height - 1
+            new_y = int(ratio_y * to_screen.height)
 
-        return (new_x + to_screen.offset_x, new_y + to_screen.offset_y)
+        return _clamp(new_y, 0, to_screen.height - 1)
+
+    @staticmethod
+    def _map_horizontal(
+        x: int,
+        from_width: int,
+        to_screen: ScreenLayout,
+        direction: str
+    ) -> int:
+        """
+        水平坐标映射（垂直拼接时使用）
+
+        根据对齐方式，计算目标屏幕上的 X 坐标。
+
+        Args:
+            x: 源屏幕 X 坐标
+            from_width: 源屏幕宽度
+            to_screen: 目标屏幕
+            direction: 'horizontal' 或 'vertical'
+        """
+        ratio_x = x / from_width if from_width > 0 else 0
+
+        if to_screen.alignment in ('left', 'top'):
+            new_x = int(ratio_x * to_screen.width)
+        elif to_screen.alignment in ('right', 'bottom'):
+            width_on_to = int(from_width * to_screen.width / from_width) if from_width > 0 else to_screen.width
+            width_on_to = min(width_on_to, to_screen.width)
+            offset_x = to_screen.width - width_on_to
+            new_x = offset_x + int(ratio_x * width_on_to)
+        elif to_screen.alignment == 'center':
+            width_on_to = int(from_width * to_screen.width / from_width) if from_width > 0 else to_screen.width
+            width_on_to = min(width_on_to, to_screen.width)
+            offset_x = (to_screen.width - width_on_to) // 2
+            new_x = offset_x + int(ratio_x * width_on_to)
+        else:
+            new_x = int(ratio_x * to_screen.width)
+
+        return _clamp(new_x, 0, to_screen.width - 1)
 
     @staticmethod
     def map_to_local(
@@ -181,7 +214,11 @@ class CoordinateMapper:
         x: int, y: int
     ) -> Tuple[int, int]:
         """
-        将坐标从远程屏幕映射回本地屏幕
+        将坐标从远程屏幕映射回本地屏幕（返回操作）
+
+        原则与 map_to_remote 相同：
+        - 进入方向的坐标固定为边缘值
+        - 垂直坐标按比例映射反向计算
 
         Args:
             from_screen: 源屏幕（远程）
@@ -210,19 +247,12 @@ class CoordinateMapper:
         x: int, y: int
     ) -> Tuple[int, int]:
         """
-        从左侧远程屏幕映射回本地屏幕
+        从左侧远程屏幕返回本地屏幕
 
-        当从左侧屏幕返回时：
-        - 目标屏幕右边界对应源屏幕左边界
+        远程屏幕在本地左侧，返回时鼠标从远程右边缘 → 本地左边缘（往内偏移）
         """
-        ratio_y = y / from_screen.height
-
-        new_x = 0
-        ratio_x = x / from_screen.width
-        new_x = int(ratio_x * to_screen.width)
-
-        new_y = int(ratio_y * to_screen.height)
-
+        new_x = EDGE_OFFSET
+        new_y = _clamp(int(y * to_screen.height / from_screen.height), 0, to_screen.height - 1)
         return (new_x, new_y)
 
     @staticmethod
@@ -232,19 +262,12 @@ class CoordinateMapper:
         x: int, y: int
     ) -> Tuple[int, int]:
         """
-        从右侧远程屏幕映射回本地屏幕
+        从右侧远程屏幕返回本地屏幕
 
-        当从右侧屏幕返回时：
-        - 目标屏幕左边界对应源屏幕右边界
+        远程屏幕在本地右侧，返回时鼠标从远程左边缘 → 本地右边缘（往内偏移）
         """
-        ratio_y = y / from_screen.height
-
-        new_x = to_screen.width - 1
-        ratio_x = 1 - x / from_screen.width
-        new_x = int(ratio_x * to_screen.width)
-
-        new_y = int(ratio_y * to_screen.height)
-
+        new_x = to_screen.width - 1 - EDGE_OFFSET
+        new_y = _clamp(int(y * to_screen.height / from_screen.height), 0, to_screen.height - 1)
         return (new_x, new_y)
 
     @staticmethod
@@ -254,19 +277,12 @@ class CoordinateMapper:
         x: int, y: int
     ) -> Tuple[int, int]:
         """
-        从上方远程屏幕映射回本地屏幕
+        从上方远程屏幕返回本地屏幕
 
-        当从上方屏幕返回时：
-        - 目标屏幕下边界对应源屏幕上边界
+        远程屏幕在本地上方，返回时鼠标从远程下边缘 → 本地上边缘（往内偏移）
         """
-        ratio_x = x / from_screen.width
-
-        new_x = int(ratio_x * to_screen.width)
-        new_y = 0
-
-        ratio_y = y / from_screen.height
-        new_y = int(ratio_y * to_screen.height)
-
+        new_x = _clamp(int(x * to_screen.width / from_screen.width), 0, to_screen.width - 1)
+        new_y = EDGE_OFFSET
         return (new_x, new_y)
 
     @staticmethod
@@ -276,17 +292,12 @@ class CoordinateMapper:
         x: int, y: int
     ) -> Tuple[int, int]:
         """
-        从下方远程屏幕映射回本地屏幕
+        从下方远程屏幕返回本地屏幕
 
-        当从下方屏幕返回时：
-        - 目标屏幕上边界对应源屏幕下边界
+        远程屏幕在本地下方，返回时鼠标从远程上边缘 → 本地下边缘（往内偏移）
         """
-        ratio_x = x / from_screen.width
-
-        new_x = int(ratio_x * to_screen.width)
-        ratio_y = 1 - y / from_screen.height
-        new_y = int(ratio_y * to_screen.height)
-
+        new_x = _clamp(int(x * to_screen.width / from_screen.width), 0, to_screen.width - 1)
+        new_y = to_screen.height - 1 - EDGE_OFFSET
         return (new_x, new_y)
 
     @staticmethod
